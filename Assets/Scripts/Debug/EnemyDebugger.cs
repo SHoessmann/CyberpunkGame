@@ -21,8 +21,15 @@ namespace Debugging
 			{
 				if (Input.GetKeyDown((KeyCode)j))
 				{
-					if (enemies[i] == null)
-						enemies[i] = EnemyManager.SpawnEnemy("test_enemy_" + ((i % 2) + 1), spawns[i].position, (i % 2 == 0) ? Direction.Right : Direction.Left);
+					if (enemies[i] == null){
+						//enemies[i] = EnemyManager.SpawnEnemy("test_enemy_" + ((i % 2) + 1), spawns[i].position, (i % 2 == 0) ? Direction.Right : Direction.Left);
+						if(i==2){
+							enemies[i] = EnemyManager.SpawnEnemy("mama_zombie", spawns[i].position, Direction.Right);
+						}
+						else {
+							enemies[i] = EnemyManager.SpawnEnemy("stealth_zombie", spawns[i].position, (i % 2 == 0) ? Direction.Right : Direction.Left);
+						}
+					}
 					else
 					{
 						EnemyManager.DestroyEnemy(enemies[i]);
