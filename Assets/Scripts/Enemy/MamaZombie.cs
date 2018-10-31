@@ -29,7 +29,7 @@ namespace Enemy
 		
 
 		private bool canAttack = true;
-		 public float attackSlowAmount = 2f;
+		public float attackSlowAmount = 2f;
         [Tooltip("how much the zombie is teleported back after attacking")]
         public float displacementAmount = 0.9f;
         [Tooltip("how much time is allowed for attack animation, careful here")]
