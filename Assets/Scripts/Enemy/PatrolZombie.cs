@@ -13,7 +13,7 @@ namespace Enemy
         [Tooltip("how long before body dissapears")]
         public float deathDuration = 1;
 
-        protected bool goingRight = false;
+        protected bool goingRight = true;
         protected bool isInGround = true;
         protected bool autoPatrol = true;
         protected bool beingDamaged = false;
@@ -72,11 +72,11 @@ namespace Enemy
 
             if (goingRight)
             {
-                FacingDirection = Direction.Left;///WHY ARE THESE BACKWARDS
+                FacingDirection = Direction.Right;///WHY ARE THESE BACKWARDS
             }
             else
             {
-                FacingDirection = Direction.Right;
+                FacingDirection = Direction.Left;
             }
         }
 
