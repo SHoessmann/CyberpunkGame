@@ -1,82 +1,158 @@
-﻿///<summary>
-/// Created by Glen McManus September 27, 2018
-/// </summary>
-
 using Audio;
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
-public class Player : MonoBehaviour
-{
+[RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(Collider2D))]
+public class Player : MonoBehaviour {
+
     //for quick and dirty AudioManager testing
     public GameObject audioPanel;
     public LevelGrid levelgrid;
     public FileDetails fileDetails = null;
     public bool initialized = false;
 
-    [Header("Movement")]
-    public float moveSpeed = 3f;
-    public float jumpForce = 5f;
-    public int maxJumpIterations = 5;
     public Direction facing = Direction.Right;
+    public Animator animator;
+    public SpriteRenderer spriteRenderer;
 
     [Header("Attack")]
-    public Vector2 attackBoxSize = Vector2.one;
+    public Vector2 attackBoxSize = new Vector2(0.16f, 0.32f);
     public ContactFilter2D attackFilter = new ContactFilter2D();
     public float maxAttackDistance = 1f;
     public LayerMask attackLayerMask;
 
     [Header("Collision")]
-    public BoxCollider2D collider;
-    public Rigidbody2D rigidbody2d;
-    public float groundDistance = 0.01f;
     public float maxForwardSlopeCastDistance = 0.3f;
     public float maxDownSlopeCastDistance = 0.1f;
     public LayerMask collisionMask;
 
-    [Header("States")]
-    protected StateMachine stateMachine;
-    public PlayerAirState airState = new PlayerAirState();
-    public PlayerAttackState attackState = new PlayerAttackState();
-    public PlayerDeadState deadState = new PlayerDeadState();
-    public PlayerDodgeState dodgeState = new PlayerDodgeState();
-    public PlayerStruckState struckState = new PlayerStruckState();
-    public PlayerIdleState idleState = new PlayerIdleState();
-    public PlayerMoveState moveState = new PlayerMoveState();
-    public PlayerStateTransitions stateTransitions = new PlayerStateTransitions();
+    public Rigidbody2D rigidbody2d;
+    public APlayerState currentState;
 
-    private void Awake()
-    {
+    public float castDist = 0.05f;
+    public RaycastHit2D bottomHit;
+    public RaycastHit2D left;
+    public RaycastHit2D right;
+    public RaycastHit2D top;
+
+    public int numCastsVertical = 8;
+    public int numCastsHorizontal = 4;
+
+    [Header("States")]
+    public bool debug = false;
+
+    private BoxCollider2D boxCollider;
+
+    private void Awake() {
         fileDetails = null;
         rigidbody2d.gravityScale = 0;
-        stateTransitions.player = this;
-        airState.player = this;
-        attackState.player = this;
-        deadState.player = this;
-        dodgeState.player = this;
-        struckState.player = this;
-        idleState.player = this;
-        moveState.player = this;
-        stateMachine = new StateMachine(idleState);
 
         FindObjectOfType<TileInfo>().levelGrid = levelgrid;
 
-        StartCoroutine(Initialize());
+        currentState.OnEnter(this);
     }
 
-    IEnumerator Initialize()
-    {
-        while (fileDetails == null)
-            yield return null;
+    // Use this for initialization
+    void Start () {
+        rigidbody2d = GetComponent<Rigidbody2D>();
+        boxCollider = GetComponent<BoxCollider2D>();
+    }
 
 
-        PlayerSpawnInfo spawn = new PlayerSpawnInfo(Vector2Int.zero, new Vector2(fileDetails.position_x, fileDetails.position_y), Direction.Right);
-        Spawn(spawn);
+    public void Update() {
+        currentState.InputCheck(this);
 
-        StartCoroutine(RunStateMachine());
-        rigidbody2d.gravityScale = 1;
-        initialized = true;
+        if (Input.GetKeyDown(KeyCode.Escape))
+            UI_Manager.instance.MenuTransition();
+    }
+
+    RaycastHit2D[] hits = new RaycastHit2D[1];
+
+    Vector2 start = new Vector2();
+    Vector2 end = new Vector2();
+
+    // Update is called once per frame
+    void FixedUpdate () {
+        if (facing == Direction.Left && spriteRenderer.flipX == false)
+            spriteRenderer.flipX = true;
+        else if (facing == Direction.Right && spriteRenderer.flipX == true)
+            spriteRenderer.flipX = false;
+
+        boxCollider.bounds.GetTopLeft(ref start);
+        boxCollider.bounds.GetBottomLeft(ref end);
+        left = ParallelCast(hits, start, end, 1, numCastsVertical);
+
+        boxCollider.bounds.GetTopRight(ref start);
+        boxCollider.bounds.GetBottomRight(ref end);
+        right = ParallelCast(hits, start, end, -1, numCastsVertical);
+        
+        boxCollider.bounds.GetTopLeft(ref start);
+        boxCollider.bounds.GetTopRight(ref end);
+        top = ParallelCast(hits, start, end, -1, numCastsHorizontal);
+
+        boxCollider.bounds.GetBottomLeft(ref start);
+        boxCollider.bounds.GetBottomRight(ref end);
+        bottomHit = ParallelCast(hits, start, end, 1, numCastsHorizontal);
+        
+        if(bottomHit) {
+            levelgrid.CompareScenePositions(bottomHit.collider.gameObject.scene.buildIndex);
+        }
+
+        currentState.Execute(this);
+        if (debug)
+            GetComponent<MeshRenderer>().material.color = currentState.DebugColor;
+
+
+        if(Input.GetKey(KeyCode.Mouse0) && animator.GetBool("Attack") == false)
+        {
+            animator.SetBool("Attack", true);
+            Vector2 direction = facing == Direction.Left ? Vector2.left : Vector2.right;
+
+            Debug.DrawRay(rigidbody2d.position, direction * maxAttackDistance, Color.red);
+
+            RaycastHit2D[] hits = Physics2D.BoxCastAll(rigidbody2d.position, attackBoxSize, 0, direction, maxAttackDistance, attackLayerMask);
+
+            foreach (RaycastHit2D hit in hits)
+            {
+                //maintain a list of objects that can be attacked in a scriptable object?
+                //using:
+                //hit.collider.GetInstanceID()
+                //and a scriptable object?
+                BreakableTileInstance bti = hit.collider.GetComponent<BreakableTileInstance>();
+                if (bti == null || bti.spriteRenderer.sprite != bti.tileRef.sprites[0])
+                    continue;
+
+                bti.StartCoroutine(bti.BreakTile());
+            }
+        }
+	}
+
+
+    RaycastHit2D ParallelCast( RaycastHit2D[] hits, Vector2 startPoint, Vector2 endPoint, int directionMultipler, int numCasts ) {
+
+        Vector2 direction = Vector2.Perpendicular((startPoint - endPoint).normalized) * directionMultipler;
+        Debug.DrawLine(start, end, Color.blue);
+
+        RaycastHit2D lastRay = default(RaycastHit2D);
+
+        for (int i = 0; i <= numCasts; i++) {
+            Vector2 origin = Vector2.Lerp(startPoint, endPoint, i / (float)numCasts);
+
+            Debug.DrawRay(origin, direction);
+            if (Physics2D.RaycastNonAlloc(origin, direction, hits, castDist, collisionMask) > 0)
+                lastRay = hits[0];
+
+        }
+        return lastRay;
+    }
+
+    public void TransferToState( APlayerState state ) {
+       // Debug.Log("Exiting: " + currentState);
+       // Debug.Log("Entering: " + state);
+        currentState.OnExit(this);
+        currentState = state;
+        currentState.OnEnter(this);
     }
 
     public void Spawn(PlayerSpawnInfo spawn)
@@ -86,107 +162,6 @@ public class Player : MonoBehaviour
         //set facing
     }
 
-    //should really be a discrete state in the state machine, apart from "air"
-    public IEnumerator Jump()
-    {
-        int i = 0;
-        while (Input.GetButton("Jump") && i <= maxJumpIterations)
-        {
-            rigidbody2d.velocity += Vector2.up * jumpForce;
-            //rigidbody2d.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
-            i++;
-            yield return null;
-        }
-    }
-
-    public Vector2 GetForwardVelocity(float dir)
-    {
-        if (dir == 0)
-            return Vector2.zero;
-
-        facing = dir < 0 ? Direction.Left : Direction.Right;
-
-        Vector2 raycastOrigin = dir < 0 ? new Vector2(-collider.bounds.extents.x, -collider.bounds.extents.y) : new Vector2(collider.bounds.extents.x, -collider.bounds.extents.y);
-
-        Debug.DrawRay(raycastOrigin, Vector2.right * dir * maxForwardSlopeCastDistance, Color.yellow);
-        Debug.DrawRay(raycastOrigin, Vector2.down, Color.red);
-
-        RaycastHit2D hitForward = Physics2D.Raycast(raycastOrigin, Vector2.right * dir, maxForwardSlopeCastDistance, collisionMask);
-        if (hitForward && !Mathf.Approximately(hitForward.normal.y, 0))
-        {
-            //Debug.Log("Ascending slope (normal) : " + hitForward.normal);
-            return Vector2.Perpendicular(hitForward.normal) * -dir;
-        }
-
-        RaycastHit2D hitDown = Physics2D.Raycast(raycastOrigin, Vector2.down, maxDownSlopeCastDistance, collisionMask);
-        if (hitDown && !Mathf.Approximately(hitDown.normal.y, 1))
-        {
-            //Debug.Log("Descending slope (normal) : " + hitDown.normal );
-            return Vector2.Perpendicular(hitDown.normal) * -dir;
-        }
-
-        //Debug.Log("Not on slope");
-        return dir * Vector2.right;
-    }
-
-    public bool isGrounded()
-    {
-        bool grounded = false;
-
-        Debug.DrawRay(rigidbody2d.position + Vector2.down * collider.bounds.extents.y, Vector2.down, Color.magenta);
-        Debug.DrawRay(rigidbody2d.position - new Vector2(collider.bounds.extents.x, collider.bounds.extents.y), Vector2.down, Color.magenta);
-        Debug.DrawRay(rigidbody2d.position + new Vector2(collider.bounds.extents.x, -collider.bounds.extents.y), Vector2.down, Color.magenta);
-
-        RaycastHit2D hit = Physics2D.Raycast(rigidbody2d.position + Vector2.down * collider.bounds.extents.y, Vector2.down, 1, collisionMask);
-        RaycastHit2D hitL = Physics2D.Raycast(rigidbody2d.position - new Vector2(collider.bounds.extents.x, collider.bounds.extents.y), Vector2.down, 1, collisionMask);
-        RaycastHit2D hitR = Physics2D.Raycast(rigidbody2d.position + new Vector2(collider.bounds.extents.x, -collider.bounds.extents.y), Vector2.down, 1, collisionMask);
-
-        if (hit)
-        {
-            levelgrid.CompareScenePositions(hit.collider.gameObject.scene.buildIndex);
-
-            if(hit.distance <= groundDistance)
-                grounded = true;
-        }
-
-        if (hitL)
-        {
-            if(!hit)
-                levelgrid.CompareScenePositions(hitL.collider.gameObject.scene.buildIndex);
-
-            if (hitL.distance <= groundDistance)
-                grounded = true;
-        }
-
-        if (hitR)
-        {
-            if(!hit && !hitL)
-                levelgrid.CompareScenePositions(hitR.collider.gameObject.scene.buildIndex);
-
-            if (hitR.distance <= groundDistance)
-                grounded = true;
-        }
-
-        return grounded;
-    }
-
-    /*
-    * You could add functionality within the foreach, checking the type of 'e' and such to do fancy things.
-    */
-    private IEnumerator RunStateMachine()
-    {
-        while (true)
-        {
-            foreach (var e in stateMachine.Execute())
-            {
-                //For quick and dirty testing of audio manager
-                if (Input.GetKeyDown(KeyCode.Escape))
-                    UI_Manager.instance.MenuTransition();
-
-                yield return null;
-            }
-        }
-    }
 
     //for testing
     public void RESET_GAME()
