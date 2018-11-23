@@ -41,8 +41,10 @@ public class Player : MonoBehaviour {
 
     [Header("States")]
     public bool debug = false;
+    public bool canDash = true;
 
     private BoxCollider2D boxCollider;
+
 
     private void Awake() {
         fileDetails = null;
@@ -97,14 +99,18 @@ public class Player : MonoBehaviour {
         
         if(bottomHit) {
             levelgrid.CompareScenePositions(bottomHit.collider.gameObject.scene.buildIndex);
+            canDash = true;
         }
 
         currentState.Execute(this);
         if (debug)
             GetComponent<MeshRenderer>().material.color = currentState.DebugColor;
 
+        if(rigidbody2d.velocity.x != 0) {
+            facing = rigidbody2d.velocity.x > 0 ? Direction.Right : Direction.Left;
+        }
 
-        if(Input.GetKey(KeyCode.Mouse0) && animator.GetBool("Attack") == false)
+        if (Input.GetKey(KeyCode.Mouse0))
         {
             animator.SetBool("Attack", true);
             Vector2 direction = facing == Direction.Left ? Vector2.left : Vector2.right;
